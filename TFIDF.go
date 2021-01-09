@@ -5,6 +5,7 @@ package TFIDF_Persistant
 import (
 	"encoding/json"
 	"errors"
+	"github.com/bbalet/stopwords"
 	"log"
 	"os"
 	"regexp"
@@ -66,7 +67,10 @@ func (i TFIDFInstance) SaveToFile(file os.File) error {
 }
 
 func (i TFIDFInstance) TFIDFScores(doc string, addToCorpus bool) (map[string]float64, error) {
-	words := i.process(doc)
+	words, err := i.process(doc, true)
+	if err != nil {
+		return nil, err
+	}
 
 	docLen := len(words)
 	if docLen == 0 {
@@ -94,23 +98,30 @@ func (i TFIDFInstance) TFIDFScores(doc string, addToCorpus bool) (map[string]flo
 		tfidf := tfScore * idfScore
 		tfidfResults[k] = tfidf
 	}
-
 	if addToCorpus {
-		i.AddToCorpus(doc, true)
+		err = i.AddToCorpus(doc, true)
+		if err != nil {
+			return tfidfResults, err
+		}
 	}
-
 	return tfidfResults, nil
 }
 
-func (i TFIDFInstance) AddToCorpus(doc string, processed bool) {
+func (i TFIDFInstance) AddToCorpus(doc string, processed bool) error {
+
 	var words []string
+	var err error
+
 	if !processed {
-		words = i.process(doc)
+		words, err = i.process(doc, true)
+		if err != nil {
+			return err
+		}
 	}
 
 	docLen := len(words)
 	if docLen == 0 {
-		return
+		return errors.New("empty document")
 	}
 
 	var countMap map[string]int
@@ -127,15 +138,21 @@ func (i TFIDFInstance) AddToCorpus(doc string, processed bool) {
 	}
 	i.TotalDocuments += 1
 	// REMINDER: It is the responsibility of callers to save
+	return nil
 }
 
-func (i TFIDFInstance) process(doc string) []string {
+func (i TFIDFInstance) process(doc string, removeStopwords bool) ([]string, error) {
 	reg, err := regexp.Compile("[^a-zA-Z0-9]+")
 	if err != nil {
-		log.Fatal(err)
+		return nil, err
 	}
 	processedString := strings.ToLower(doc)
 	processedString = reg.ReplaceAllString(processedString, "")
+
+	if removeStopwords {
+		processedString = stopwords.CleanString(processedString, "en", false)
+	}
+
 	words := strings.Fields(processedString)
-	return words
+	return words, nil
 }
