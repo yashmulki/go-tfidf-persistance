@@ -1,6 +1,9 @@
 package TFIDF_Persistant
 
+// NOTE: Closing is the responsibility of the caller. This does not implement any direct file interaction
+
 import (
+	"encoding/json"
 	"errors"
 	"log"
 	"os"
@@ -8,33 +11,62 @@ import (
 	"strings"
 )
 
-func NewInstance(file os.File) error {
-	return nil
+func NewInstance(name string) TFIDFInstance {
+	instance := TFIDFInstance{
+		Name:           name,
+		Terms: 			map[string]int{},
+		TotalDocuments: 0,
+	}
+	return instance
 }
 
-func LoadInstance(file os.File, name string) error {
-	return nil
+func LoadInstance(file os.File) (*TFIDFInstance, error) {
+	var data []byte
+	_, err := file.Read(data)
+	if err != nil {
+		return nil, err
+	}
+	var instance TFIDFInstance
+	err = json.Unmarshal(data, instance)
+	if err != nil {
+		return nil, err
+	}
+	return &instance, nil
 }
 
-func CreateNewFile() (os.File, error) {
-	return os.File{}, nil
+func CreateNewFile(path string) (*os.File, error) {
+	f, err := os.Create(path+".json")
+	if err != nil {
+		return nil, err
+	}
+	return f, nil
 }
+
 
 type TFIDFInstance struct {
-	Name string
-	Terms map[string]int
-	TotalDocuments int
+	Name string `json:"Name"`
+	Terms map[string]int `json:"Terms"`
+	TotalDocuments int `json:"TotalDocuments"`
+}
+
+func (i TFIDFInstance) SaveToFile(file os.File) error {
+	data, err := json.MarshalIndent(i, "", " ")
+	if err != nil {
+		return err
+	}
+	_, err = file.Write(data)
+	if err != nil {
+		return err
+	}
+	err = file.Close()
+	if err != nil {
+		return err
+	}
+	return nil
 }
 
 func (i TFIDFInstance) TFIDFScores(doc string, addToCorpus bool) (map[string]float64, error) {
-	// Strip out punctuation
-	reg, err := regexp.Compile("[^a-zA-Z0-9]+")
-	if err != nil {
-		log.Fatal(err)
-	}
-	processedString := strings.ToLower(doc)
-	processedString = reg.ReplaceAllString(processedString, "")
-	words := strings.Fields(processedString)
+	words := i.process(doc)
 
 	docLen := len(words)
 	if docLen == 0 {
@@ -62,17 +94,19 @@ func (i TFIDFInstance) TFIDFScores(doc string, addToCorpus bool) (map[string]flo
 		tfidf := tfScore * idfScore
 		tfidfResults[k] = tfidf
 	}
+
+	if addToCorpus {
+		i.AddToCorpus(doc, true)
+	}
+
 	return tfidfResults, nil
 }
 
-func (i TFIDFInstance) AddToCorpus(doc string) {
-	reg, err := regexp.Compile("[^a-zA-Z0-9]+")
-	if err != nil {
-		log.Fatal(err)
+func (i TFIDFInstance) AddToCorpus(doc string, processed bool) {
+	var words []string
+	if !processed {
+		words = i.process(doc)
 	}
-	processedString := strings.ToLower(doc)
-	processedString = reg.ReplaceAllString(processedString, "")
-	words := strings.Fields(processedString)
 
 	docLen := len(words)
 	if docLen == 0 {
@@ -92,5 +126,16 @@ func (i TFIDFInstance) AddToCorpus(doc string) {
 		}
 	}
 	i.TotalDocuments += 1
-	// Make sure to save this file
+	// REMINDER: It is the responsibility of callers to save
+}
+
+func (i TFIDFInstance) process(doc string) []string {
+	reg, err := regexp.Compile("[^a-zA-Z0-9]+")
+	if err != nil {
+		log.Fatal(err)
+	}
+	processedString := strings.ToLower(doc)
+	processedString = reg.ReplaceAllString(processedString, "")
+	words := strings.Fields(processedString)
+	return words
 }
